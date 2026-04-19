@@ -1,64 +1,77 @@
-version: "2" # golangci-lint v2 스키마 명시
+# golangci-lint v2 config
+# gosu-review 스킬과 짝을 이루는 린터 설정.
+# 스킬은 "설계/맥락 판단"을, 린터는 "정적 감지 가능한 패턴"을 담당한다.
+#
+# 커버리지 주석은 다음 규칙을 따른다:
+#   ✓ = 해당 룰을 린터가 완전히 커버함 (스킬에서 제외됨)
+#   ~ = 부분 커버 (스킬과 중복될 수 있음 — 이중 안전망)
+#   아무 표시 없음 = 룰과 직접 매핑되지 않는 일반 품질 린터
+
+version: "2"
 
 linters:
-  default: none # 기존 disable-all: true 와 동일 (모든 기본 린터 비활성화 후 필요한 것만 명시적으로 켬)
+  default: none
   enable:
-    - copyloopvar    # [31, 32번] Go 1.22 이상에서의 루프 변수 복사/캡처 문제 방지
-    - errcheck       # [52, 53번] 무시된 에러(특히 defer 내부) 검출
-    - errorlint      # [48, 49, 50번] %w 래핑 및 errors.Is/As 사용 강제
-    - gochecknoinits # [3번] init() 함수 사용 금지 (부작용 최소화)
-    - gocritic       # [31, 32번] range 무거운 값 복사 방지 및 성능 최적화 권고
-    - govet          # [1, 46번] 섀도잉, defer 파라미터 즉시 평가 등 검사
-    - ineffassign    # [32번] 값 갱신 후 사용하지 않는 로직(range 복사본 수정 등) 오류 탐지
-    - nakedret       # [43번] 기명 결과 매개변수 사용 시 naked return(명시적 반환 누락) 제한
-    - nestif         # [2번] 과도한 if/for 중첩 강제 제한 (멘탈 모델 보호)
-    - nilerr         # [44번 연관] if err != nil { return nil } 이라는 치명적 실수 차단
-    - nilnil         # [44번] return nil, nil 처럼 결과와 에러가 모두 nil인 모호한 리턴 방지
-    - perfsprint     # fmt.Sprintf 대신 전용 함수(strconv 등) 사용 권고 (성능 최적화)
-    - prealloc       # [22번] 슬라이스 초기화 시 capacity 할당 강제
-    - revive         # [15, 17번] 익스포트 요소 문서화 강제, 범용적인 스타일 교정
-    - staticcheck    # [17, 19, 30, 35, 38, 47번] 전반적인 로직 버그 및 안티패턴 탐지
-    - unused         # 미사용 상수/변수/함수 정리 (기본적인 성능/가독성 유지)
+    - copyloopvar     # Go 1.22+ 루프 변수 per-iteration scope 활용 강제 (Rule 31과는 다른 영역)
+    - errcheck        # ✓ Rule 52 (무시된 에러), ~ Rule 53 (defer 에러 일부)
+    - errorlint       # ✓ Rule 49 (errors.Is/As 강제), ~ Rule 48 (%w 사용 체크 일부)
+    - gochecknoinits  # ✓ Rule 3 (init 함수 사용 제한)
+    - gocritic        # ✓ Rule 17 (octalLiteral), ~ Rule 14 (importShadow), ~ Rule 40 (stringXbytes)
+    - govet           # ✓ Rule 1 (shadow)
+    - ineffassign     # 값 갱신 후 미사용 탐지 (일반 품질)
+    - nakedret        # ~ Rule 43 (긴 함수의 naked return 제한 — 부분 커버)
+    - nestif          # ~ Rule 2 (중첩 깊이 — 스킬과 이중 안전망)
+    - nilerr          # `if err != nil { return nil }` 류 치명 버그 탐지 (Rule 44와는 다름)
+    - nilnil          # `return nil, nil` 모호 리턴 탐지 (Rule 44와는 다른 영역이지만 유관)
+    - perfsprint      # fmt.Sprintf → strconv 대체 (성능 — 룰 직접 매핑 없음)
+    - prealloc        # ~ Rule 22 (슬라이스 cap 지정 — 루프 내 append 한정)
+    - revive          # ✓ Rule 15 (문서화), 기타 스타일
+    - staticcheck     # ✓ Rule 30 일부 (DeepEqual 권고), 광범위한 안티패턴
+    - unused          # 미사용 코드 정리 (일반 품질)
 
-  # 특정 린터 세부 설정
   settings:
     govet:
       enable:
-        - shadow
+        - shadow      # Rule 1 커버
+
     errorlint:
-      errorf: false     # [48번] 의도적인 %v 사용을 허용하기 위해 %w 강제 끔 (상황에 따라 다르게 처리)
-      asserts: true     # [49번] 타입 단언(err.(*MyErr)) 대신 errors.As() 강제
-      comparison: true  # [50번] 직접 비교(err == ErrMy) 대신 errors.Is() 강제
+      errorf: false   # %v 사용 허용 (Rule 48은 의도적 선택이라 강제하지 않음)
+      asserts: true   # Rule 49 — 타입 어설션 대신 errors.As() 강제
+      comparison: true # Rule 49 — 직접 비교 대신 errors.Is() 강제
+
     gocritic:
       enabled-checks:
-        - rangeValCopy  # [32번] range 루프에서 큰 객체가 복사될 때 경고 (성능 저하 방지)
-        - appendAssign  # append 결과를 다른 변수에 엉뚱하게 대입하는 메모리 충돌 실수 방지
+        - rangeValCopy       # 큰 값 복제 경고 (Rule 31 부분 성능 측면 — 의미 측면은 스킬)
+        - appendAssign       # append 오용 (Rule 23 관련 부분 커버)
+        - stringXbytes       # Rule 40 — string↔[]byte 불필요 변환
+        - octalLiteral       # Rule 17 — 0으로 시작하는 정수 리터럴
+        - importShadow       # Rule 14 — 임포트 이름 섀도잉
+
     nakedret:
-      max-func-lines: 35 # [43번] 함수가 35줄을 넘어가면 기명 반환(naked return)을 금지하여 가독성 확보
+      max-func-lines: 35    # 35줄 초과 함수에서 naked return 금지
+
     nestif:
-      min-complexity: 4  # [2번] 중첩 깊이 허용치 (기본값 5에서 4로 낮추어 더 깐깐하게 관리)
+      min-complexity: 4     # 기본 5에서 4로 — 스킬이 놓치는 경계 케이스 보조
+
     revive:
       rules:
-        - name: exported # [15번] 익스포트된(대문자로 시작하는) 함수, 타입에 주석 강제
+        - name: "exported"  # Rule 15 — 익스포트된 요소 문서화 강제
           arguments:
-            - checkPrivateReceivers
-    perfsprint:
-      concat-loop: true # [39번] 루프 내 문자열 결합 시 fmt.Sprintf 대신 빌더 사용 권고 강화
+            - "checkPrivateReceivers"
+            - "sayRepetitiveInsteadOfStutters"
 
-  # (마이그레이션 자동 생성) 린터 검사 예외(Exclusion) 처리
   exclusions:
-    generated: lax    # Protobuf, Mock 등 자동 생성된 코드는 엄격한 검사 기준 완화
-    presets: # 기본적으로 무시할 오탐지(False positive) 및 주석 패턴 프리셋
+    generated: lax
+    presets:
       - comments
       - common-false-positives
       - legacy
       - std-error-handling
-    paths: # 검사에서 아예 제외할 폴더나 파일 경로 (정규식)
+    paths:
       - third_party$
       - builtin$
       - examples$
 
-# (마이그레이션 자동 생성) 코드 포매팅 관련 예외 처리
 formatters:
   exclusions:
     generated: lax
@@ -66,3 +79,28 @@ formatters:
       - third_party$
       - builtin$
       - examples$
+
+# ─────────────────────────────────────────────────────────────
+# 스킬과 린터의 역할 분담 요약
+# ─────────────────────────────────────────────────────────────
+#
+# 린터가 담당 (스킬 제외):
+#   Rule 1  shadow           → govet
+#   Rule 3  init 제약         → gochecknoinits
+#   Rule 14 변수/패키지 충돌  → gocritic importShadow
+#   Rule 15 익스포트 문서화   → revive exported
+#   Rule 16 린터/포맷터 사용  → (메타 권고)
+#   Rule 17 8진수 리터럴      → gocritic octalLiteral
+#   Rule 22 cap 지정          → prealloc (부분)
+#   Rule 38 Trim 차이         → gocritic / staticcheck
+#   Rule 49 errors.Is/As      → errorlint
+#   Rule 52 에러 명시 무시    → errcheck
+#
+# 스킬이 담당 (린터 못 잡음):
+#   Rule 2, 4~13, 18, 20, 21, 23~37, 39~48, 50, 51, 53
+#   (설계 판단, 맥락 의존, 의도 vs 코드 불일치 영역)
+#
+# 이중 안전망 (양쪽 다):
+#   Rule 2 (중첩)   - nestif + 스킬 (가드 절 리팩토링 제안)
+#   Rule 43 (기명)  - nakedret + 스킬 (섀도잉 버그 판단)
+#   Rule 53 (defer 에러) - errcheck + 스킬 (병합 처리 설계)

@@ -5,7 +5,8 @@
 
 ## 발동 조건
 
-`make`, `append`, `copy`, `[low:high]`/`[low:high:max]`, `string(`, `[]byte(`, `strings.`, `bytes.` 호출
+- `make`, `append`, `copy`, `[low:high]`/`[low:high:max]`, `string(`, `[]byte(`, `strings.`, `bytes.` 호출
+- **문자열 `+`/`+=` 결합** (특히 `for` 루프 안) — Rule 39
 
 ## 검사 절차
 
@@ -15,6 +16,7 @@
 4. 슬라이스 타입이 `[]*T` 또는 포인터 필드 구조체 → 축소 시 누수 가능성 (Rule 25)
 5. `string ↔ []byte` 변환 빈도 (Rule 40)
 6. 큰 문자열에서 슬라이싱 결과를 **함수 외부로 반환/저장**하는가 (Rule 41)
+7. `for` 루프 안에서 문자열을 `+=` 또는 `fmt.Sprintf`로 누적하는가 (Rule 39)
 
 ## 룰
 
@@ -69,6 +71,36 @@
 - 문제: 슬라이싱 결과는 원본의 백킹 배열을 참조 → 원본 전체가 GC되지 않음
 - 수정: `strings.Clone(s[i:j])`로 복제해 새 백킹 배열 확보
 - 단순 지역 사용은 무관
+
+### Rule 39 — strings.Builder로 반복 결합
+- 핵심 질문: 반복 구문 안에서 문자열을 `+`/`+=` 또는 `fmt.Sprintf`로 누적하고 있지 않은가?
+- 문제: Go의 문자열은 불변 → 결합할 때마다 새 메모리 할당 + 전체 복사. N번 반복이면 O(N²) 비용
+- 안티패턴:
+  ```go
+  var s string
+  for _, w := range words {
+      s += w + " "                    // 매번 새 할당
+  }
+  ```
+  또는:
+  ```go
+  result := ""
+  for _, item := range items {
+      result = fmt.Sprintf("%s%s\n", result, item.Name)  // Sprintf도 동일 문제
+  }
+  ```
+- 수정: `strings.Builder` 사용
+  ```go
+  var b strings.Builder
+  b.Grow(estimatedSize)  // 예상 크기 있으면 미리 할당
+  for _, w := range words {
+      b.WriteString(w)
+      b.WriteByte(' ')
+  }
+  s := b.String()
+  ```
+- 대안: 미리 슬라이스에 모아 `strings.Join(parts, sep)` — 구분자 있을 때 가장 간결
+- 예외: 반복 횟수가 고정적으로 2~3번이면 `+`가 더 읽기 쉬울 수 있음. 동적 반복에서만 적용
 
 ## 출력 시 주의사항
 

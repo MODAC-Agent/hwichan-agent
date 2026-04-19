@@ -13,6 +13,8 @@ type Resource struct {
 
 var ErrForbidden = errors.New("forbidden")
 
+// Rule 2 위반: 5단 중첩. happy path가 가장 안쪽에 있음.
+// 가드 절(early return)로 평탄화 필요.
 func Authorize(user *User, resource *Resource, action string) error {
 	if user != nil {
 		if user.Active {

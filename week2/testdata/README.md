@@ -40,3 +40,5 @@
 | trigger14_package_structure | R12, R13 (디렉토리 전체 입력 필요) |
 | trigger15_arithmetic | R18, R19, R20 |
 | trigger16_error_declaration | R50 |
+
+

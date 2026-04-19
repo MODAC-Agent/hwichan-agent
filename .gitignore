@@ -1,1 +1,10 @@
 /src/
+
+# macOS
+.DS_Store
+
+# JetBrains IDE
+.idea/
+
+# Claude Code local artifacts
+.claude/worktrees/

@@ -1,0 +1,107 @@
+# Trigger 05: 슬라이스/문자열 메모리
+
+> 이 파일은 gosu-review SKILL의 트리거 05 레퍼런스다.
+> 메인 SKILL.md의 워크플로우 3단계에서 이 트리거가 발동하면 읽는다.
+
+## 발동 조건
+
+- `make`, `append`, `copy`, `[low:high]`/`[low:high:max]`, `string(`, `[]byte(`, `strings.`, `bytes.` 호출
+- **문자열 `+`/`+=` 결합** (특히 `for` 루프 안) — Rule 39
+
+## 검사 절차
+
+1. 슬라이스/맵 생성 시 용량 힌트 검토 (Rule 21)
+2. `append` 결과 대입 패턴 + 공유 슬라이스 가능성 (Rule 23)
+3. `copy` 호출 — 양쪽 길이 확인 (Rule 24)
+4. 슬라이스 타입이 `[]*T` 또는 포인터 필드 구조체 → 축소 시 누수 가능성 (Rule 25)
+5. `string ↔ []byte` 변환 빈도 (Rule 40)
+6. 큰 문자열에서 슬라이싱 결과를 **함수 외부로 반환/저장**하는가 (Rule 41)
+7. `for` 루프 안에서 문자열을 `+=` 또는 `fmt.Sprintf`로 누적하는가 (Rule 39)
+
+## 룰
+
+### Rule 21 — len/cap 이해
+- 핵심 질문: 예상 가능한 크기가 있는데 `make([]T, 0)` 또는 nil 슬라이스로 시작해 반복 `append`하는가?
+- 권장: `make([]T, 0, expectedCap)` 또는 `make([]T, n)` (직접 인덱스 대입 시)
+- 효과: 재할당/복사 횟수 감소
+- 맵도 동일: `make(map[K]V, hint)`
+
+### Rule 23 — append 충돌 / 슬라이스 축소 누수
+- 핵심 질문: 같은 백킹 배열을 공유하는 슬라이스를 서로 다른 곳에서 `append`하지 않는가?
+- 안티패턴:
+  ```go
+  a := []int{1,2,3,4,5}
+  b := a[:3]
+  b = append(b, 99)   // a[3]을 덮어씀
+  ```
+- 축소 시 `s = s[:0]` 또는 `s = s[:n]`은 백킹 배열을 그대로 둠 → 다른 코드와 공유 시 위험
+- 안전 분리: `b := slices.Clone(a[:3])` 또는 풀 슬라이스 표현식 `a[low:high:high]` (cap 제한)
+
+### Rule 24 — copy 동작 인지
+- 핵심 질문: `copy(dst, src)`가 두 슬라이스 중 짧은 길이만큼만 복사하는 것을 의식했는가?
+- 함정:
+  ```go
+  dst := make([]int, 0, 10)  // len=0
+  copy(dst, src)             // 0개 복사됨!
+  ```
+- 수정: `dst := make([]int, len(src))` 또는 `dst = append(dst, src...)`
+
+### Rule 25 — 포인터 원소 누수
+- 핵심 질문: `[]*T` 또는 포인터 필드 구조체 슬라이스를 축소하면서 잘려나간 원소를 nil 처리했는가?
+- 문제: 슬라이스를 줄여도 백킹 배열의 포인터가 남아 GC 회수 불가
+- 패턴:
+  ```go
+  // 잘못: q[0]은 여전히 참조됨
+  q = q[1:]
+  // 올바름:
+  q[0] = nil
+  q = q[1:]
+  ```
+- 또는 `slices.Delete` 류 (내부에서 zero 처리) 사용
+
+### Rule 40 — bytes 패키지 활용
+- 핵심 질문: `[]byte`를 받아 `string`으로 변환해 처리한 뒤 다시 `[]byte`로 돌아가지 않는가?
+- 변환은 매번 메모리 할당을 유발
+- 권장: `bytes.Contains`, `bytes.Split` 등 `bytes` 패키지의 동등 함수 사용
+- 예외: 한 번 변환 후 여러 작업을 거쳐 결과만 사용하는 경우는 무방
+
+### Rule 41 — 서브스트링 누수
+- 핵심 질문: 큰 문자열에서 작은 부분만 슬라이싱한 결과를 **장기 보관**하는가?
+  - 구조체 필드 대입, 전역 변수, 함수 외부로 반환, 채널/맵 저장 등
+- 문제: 슬라이싱 결과는 원본의 백킹 배열을 참조 → 원본 전체가 GC되지 않음
+- 수정: `strings.Clone(s[i:j])`로 복제해 새 백킹 배열 확보
+- 단순 지역 사용은 무관
+
+### Rule 39 — strings.Builder로 반복 결합
+- 핵심 질문: 반복 구문 안에서 문자열을 `+`/`+=` 또는 `fmt.Sprintf`로 누적하고 있지 않은가?
+- 문제: Go의 문자열은 불변 → 결합할 때마다 새 메모리 할당 + 전체 복사. N번 반복이면 O(N²) 비용
+- 안티패턴:
+  ```go
+  var s string
+  for _, w := range words {
+      s += w + " "                    // 매번 새 할당
+  }
+  ```
+  또는:
+  ```go
+  result := ""
+  for _, item := range items {
+      result = fmt.Sprintf("%s%s\n", result, item.Name)  // Sprintf도 동일 문제
+  }
+  ```
+- 수정: `strings.Builder` 사용
+  ```go
+  var b strings.Builder
+  b.Grow(estimatedSize)  // 예상 크기 있으면 미리 할당
+  for _, w := range words {
+      b.WriteString(w)
+      b.WriteByte(' ')
+  }
+  s := b.String()
+  ```
+- 대안: 미리 슬라이스에 모아 `strings.Join(parts, sep)` — 구분자 있을 때 가장 간결
+- 예외: 반복 횟수가 고정적으로 2~3번이면 `+`가 더 읽기 쉬울 수 있음. 동적 반복에서만 적용
+
+## 출력 시 주의사항
+
+Rule 25, 41은 "선언 지점"과 "문제 지점"이 떨어져 있을 수 있다. 리포트에 선언 위치도 함께 적으면 맥락 이해에 도움.

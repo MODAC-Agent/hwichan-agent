@@ -1,49 +1,29 @@
-# Week 4 Improvement Plan for gosu-review
+# Week 4: gosu-review 스킬의 구조적 개선 핵심 요약
 
-This document summarizes the refinement strategy for the `gosu-review` skill, based on the real-world code patterns identified in the `skipjd` test data.
+`skipjd` 프로젝트의 실제 코드를 분석한 결과, 기존의 '추상적인 설명' 위주의 룰 정의와 '제한된 코드 시야'가 오진의 핵심 원인으로 파악되었습니다. 4주차에는 룰의 내용뿐만 아니라 **스킬이 동작하는 구조 자체**를 다음과 같이 리팩토링합니다.
 
-## 1. Context-Aware Rule Refinement
+## 1. LLM의 사전 학습 편향(데이터 컷오프) 제어 구조화
+*   **현상**: LLM이 제공된 레퍼런스 문서보다 자신이 과거에 학습한 "Go 언어 베스트 프랙티스(예: 무조건적인 range 복사 회피)"를 우선시하여 오진(Rule 31) 발생.
+*   **구조적 개선 방안**:
+    *   **프로젝트 Go 버전 주입**: 워크플로우 1단계에서 `go.mod`를 파싱해 해당 프로젝트의 Go 버전(예: `1.22+`)을 추출하고, 이를 프롬프트 최상단에 고정 컨텍스트로 주입하여 최신 언어 스펙을 기준으로 판단하도록 강제.
+    *   **명시적 예외(Exceptions) 블록 강제**: 모든 `trigger-*.md` 레퍼런스 내의 각 룰에 `#### 예외 조건` 섹션을 의무화. (예: "크기가 작은 구조체의 단순 순회 시에는 복사 비용 지적 절대 금지")
 
-### Error Wrapping Strategy (Rule 48)
-- **Observation:** In `crawler.go` and `output.go`, internal I/O or parsing errors were wrapped with `%w`.
-- **Improvement:** Update Rule 48 to distinguish between "domain errors" (caller needs to branch) and "internal implementation errors".
-- **Action:** Add a check to see if the error is likely to be handled by the caller (e.g., returned from a public method) vs. a terminal/internal failure (e.g., `fmt.Fprintf`).
+## 2. Few-shot 프롬프팅 도입 (추상적 설명 -> 구체적 예제)
+*   **현상**: "호출자가 에러를 분기해야 하는가?" 같은 추상적 기준만으로는 LLM이 `fmt.Fprintf` 같은 내부 I/O 에러에도 `%w`를 권장하는 오류(Rule 48) 발생.
+*   **구조적 개선 방안**:
+    *   각 룰 레퍼런스에 구체적인 **`Do (권장)`**와 **`Don't (안티패턴)`** 코드 스니펫(Few-shot) 추가.
+    *   *예시 (Rule 48)*: 
+        *   `Don't`: `fmt.Errorf("write failed: %w", err)` (단순 내부 I/O 실패)
+        *   `Do`: `fmt.Errorf("user not found: %w", err)` (외부에서 `.Is(ErrNotFound)`로 분기할 도메인 에러)
 
-### Guard Clause Logic (Rule 2)
-- **Observation:** `detail_scraper.go` contains nested `switch` and `if` blocks.
-- **Improvement:** Refine Rule 2 to handle `switch` cases. Sometimes a `switch` is cleaner than a long list of `if` guard clauses.
-- **Action:** Define a threshold for "meaningful nesting" vs. "unnecessary complexity" in `switch` statements.
+## 3. 서브에이전트의 시야(Context) 한계 극복 정책
+*   **현상**: 에러 래핑 전략(Rule 48)이나 인터페이스 반환(Rule 7)을 정확히 진단하려면 "이 함수를 호출하는 쪽(Caller)"의 코드가 필요한데, 서브에이전트에게는 ±20줄의 스니펫만 제공됨.
+*   **구조적 개선 방안**:
+    *   호출처 추적이 불가능한 구조적 한계를 인정하고, 대신 **심볼의 접근 제어자(Public/Private) 기반 휴리스틱** 도입.
+    *   *적용 방식*: 대상 함수가 대문자로 시작하는 Exported API라면 향후 확장을 고려해 더 엄격한 룰(`%w` 사용 지양, 인터페이스 입력 강제 등)을 제안하고, unexported 함수라면 내부 구현이므로 유연하게 넘어가도록 룰 판단 지침 변경.
 
-### Receiver Type Selection (Rule 42)
-- **Observation:** The `Crawler` struct uses pointer receivers, but some methods might not mutate state.
-- **Improvement:** Ensure the rule checks for **consistency** across the entire struct rather than just flagging individual methods.
-- **Action:** Enforce the "all pointers or all values" rule more strictly when reviewing a single file.
-
-## 2. Eliminating Outdated/Noisy Advice
-
-### Range Iteration & Go 1.22+ (Rule 31)
-- **Observation:** The skill gave noisy advice about `range` value copies even for small structs or cases where Go 1.22+ optimizations apply.
-- **Improvement:** 
-    - Add a **size threshold** for flagging value copies (e.g., ignore if struct is small).
-    - Add a note about **Go 1.22+ loop variable semantics** to prevent outdated advice.
-- **Action:** Update `references/trigger-07-range-iteration.md` with explicit exclusion criteria.
-
-## 3. Handling Designing Decisions (Rule 7/11)
-
-### Functional Options Pattern (Rule 11)
-- **Observation:** `crawler.go` implements Functional Options but the skill might still suggest it if the implementation is non-idiomatic.
-- **Improvement:** Recognize existing patterns to avoid redundant suggestions.
-- **Action:** Add a "Pattern Detection" step before suggesting Rule 11.
-
-## 4. Safety & PII Awareness
-- **Observation:** Real code often contains "Key" or "Token" as technical terms.
-- **Improvement:** Reduce false positives in "Security" checks by recognizing common Go/GORM patterns (e.g., `SourceKey`).
-- **Action:** Whitelist common technical suffixes/patterns in the skill's initial scan.
-
----
-
-### Target Files for Testing
-Use these files in `week3/testdata/` to verify the refinements:
-- `crawler/crawler.go`: Dependency injection, Error wrapping.
-- `gamejob/detail_scraper.go`: Guard clauses, `defer` evaluation.
-- `model/job_posting.go`: Struct design, `range` performance.
+## 4. 복합 트리거 연계 분석 로직 추가
+*   **현상**: 구체 타입 의존(Rule 7)과 옵션 패턴 오용(Rule 11)이 동시에 발생했을 때, LLM이 이를 개별적인 문제로 보고 파편화된 리뷰를 생성.
+*   **구조적 개선 방안**:
+    *   스킬 메인 워크플로우(SKILL.md) 5단계(리포트 통합)에 **"연관 룰 그룹핑 지침"** 추가.
+    *   동일한 함수/메서드 선언부(Trigger 01)에서 여러 룰 위반이 발견되면, 이를 기계적으로 나열하지 않고 "입력은 인터페이스로 유연하게(Rule 7), 부가 설정은 옵션 패턴으로 분리(Rule 11)하라"는 하나의 통합된 설계 제안으로 합치도록 프롬프트 개선.

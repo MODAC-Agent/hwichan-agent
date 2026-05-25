@@ -1,6 +1,6 @@
 # hwichan-agent
 
-A 5-week study log of building **[skipJD](https://github.com/oak-cassia/skipjd)** — a job posting recommendation system written in Go, with an emphasis on idiomatic Go practices. Weekly retrospectives accumulate here; the system itself lives in a separate repository (`skipjd`).
+A 5-week study log of building **[skipJD-private](https://github.com/oak-cassia/skipjd)** — a job posting recommendation system written in Go, with an emphasis on idiomatic Go practices. Weekly retrospectives accumulate here; the system itself lives in a separate repository (`skipjd`).
 
 ## Goals of the Study
 

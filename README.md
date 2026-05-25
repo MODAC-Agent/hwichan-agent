@@ -53,7 +53,6 @@ Each week had a theme. Full retrospectives are in each weekly README (Korean).
 - [week2](week2/README.md) — Designing the `gosu-review` code-review skill + an output-format compression experiment
 - [week3](week3/README.md) — Hardening the data foundation; the decision rule extracted from abandoned LLM use cases
 - [week4](week4/README.md) — Building the body-processing pipeline (extractor / OCR) and a reliability baseline
-- [week5](week5/README.md) — Wrap-up: generalizing the criteria for when to use an LLM
 
 ## What Went Wrong (and What I Learned)
 

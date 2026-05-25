@@ -53,6 +53,7 @@ Each week had a theme. Full retrospectives are in each weekly README (Korean).
 - [week2](week2/README.md) — Designing the `gosu-review` code-review skill + an output-format compression experiment
 - [week3](week3/README.md) — Hardening the data foundation; the decision rule extracted from abandoned LLM use cases
 - [week4](week4/README.md) — Building the body-processing pipeline (extractor / OCR) and a reliability baseline
+- [Final retrospective (Medium)](https://medium.com/@gnlckswjd1/llm%EC%9D%84-%EC%9E%98-%ED%99%9C%EC%9A%A9%ED%95%98%EB%A0%A4%EB%8B%A4-%EB%8B%A4%EC%8B%9C-%EB%A7%88%EC%A3%BC%EC%B9%9C-%EB%AC%B8%EC%A0%9C-%EC%A0%95%EC%9D%98%EC%9D%98-%EC%A4%91%EC%9A%94%EC%84%B1-750b721312e4) — Wrap-up: how trying to use LLMs better led back to the importance of problem definition
 
 ## What Went Wrong (and What I Learned)
 
